@@ -1,23 +1,17 @@
-﻿using System;
+﻿using AForge.Video;
+using AForge.Video.DirectShow;
+using DocumentFormat.OpenXml.Office2016.Drawing.Command;
+using ScannerReader.Model;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using AForge.Video.DirectShow;
-using AForge.Video;
 using ZXing;
-using ZXing.Common;
-using System.Drawing.Imaging;
-using System.Threading;
 using Excel = ClosedXML.Excel;
-using DocumentFormat.OpenXml.Drawing;
-using DocumentFormat.OpenXml.Spreadsheet;
-using DocumentFormat.OpenXml.Office2019.Excel.RichData;
-using System.Runtime.Remoting.Channels;
 
 namespace ScannerReader.Views
 {
@@ -26,7 +20,7 @@ namespace ScannerReader.Views
 
         private FilterInfoCollection videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
         private VideoCaptureDevice videoSource;
-        private int deviceSelected = 0;
+        private int deviceSelected = -1;
         private bool getCode = true;
         private char modeCode = 'r';
         public frmMain()
@@ -38,29 +32,30 @@ namespace ScannerReader.Views
         {
             /* SETTINGS SELECT SCANNER LIST */
             tscbLector.Items.Add("Escanér");
-            for (int i = 0; i<videoDevices.Count; i++)
+            for (int i = 0; i < videoDevices.Count; i++)
             {
                 tscbLector.Items.Add(videoDevices[i].Name);
             }
-            tscbLector.ComboBox.SelectedIndex = deviceSelected+1;
+            tscbLector.ComboBox.SelectedIndex = deviceSelected + 1;
         }
-        private void cameraChange(int index)
+        private void CameraChange(int index)
         {
-            if((videoSource == null) || (!videoSource.IsRunning))
+            if ((videoSource == null) || (!videoSource.IsRunning))
             {
                 deviceSelected = index;
-                onCamera();
-            } else
+                OnCamera();
+            }
+            else
             {
                 videoSource.SignalToStop();
                 videoSource = null;
                 deviceSelected = index;
-                onCamera();
+                OnCamera();
             }
         }
 
 
-        private void onCamera()
+        private void OnCamera()
         {
             if (((videoSource == null) || (!videoSource.IsRunning)) && (deviceSelected >= 0))
             {
@@ -80,7 +75,8 @@ namespace ScannerReader.Views
                 {
                     MessageBox.Show("Error starting camera: " + ex.Message);
                 }
-            } else if (deviceSelected == -1)
+            }
+            else if (deviceSelected == -1)
             {
                 txtbBarcodeReader.Select();
             }
@@ -89,11 +85,11 @@ namespace ScannerReader.Views
 
 
 
-/*
+        /*
 
-        VIDEO SOURCE NEW FRAME: MAPPING CAMERA FRAMES TO SCAN BARCODE
+                VIDEO SOURCE NEW FRAME: MAPPING CAMERA FRAMES TO SCAN BARCODE
 
-*/
+        */
         private void VideoSource_NewFrame(object sender, NewFrameEventArgs eventArgs)
         {
             try
@@ -102,7 +98,7 @@ namespace ScannerReader.Views
                 {
                     if (pictureBoxCamera.InvokeRequired)
                     {
-                        pictureBoxCamera.Invoke(new MethodInvoker (delegate
+                        pictureBoxCamera.Invoke(new MethodInvoker(delegate
                         {
                             pictureBoxCamera.Image?.Dispose();
                             pictureBoxCamera.Image = new Bitmap(bitmap);
@@ -114,7 +110,7 @@ namespace ScannerReader.Views
 
                     ScanBarcode(bitmap);
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -122,11 +118,11 @@ namespace ScannerReader.Views
             }
         }
 
-/*
- 
-        SCAN BARCODE FUNCTION: READ AND SEND BARCODE
- 
- */
+        /*
+
+                SCAN BARCODE FUNCTION: READ AND SEND BARCODE
+
+         */
         private async void ScanBarcode(Bitmap bitmap)
         {
             if (getCode == true)
@@ -157,7 +153,7 @@ namespace ScannerReader.Views
                             else
                             {
                                 Console.WriteLine("Barcode detected: " + result);
-                                execute(result.Text);
+                                Execute(result.Text);
                             }
                         }
                         else
@@ -181,55 +177,38 @@ namespace ScannerReader.Views
             }
         }
 
-        private async void execute(string result)
+        private async void Execute(string result)
         {
             getCode = false;
             Console.Beep();
 
             switch (modeCode)
             {
-                case ('A'):
-                    {
-                        var cell = searchProduct(result);
-                        if (cell == null)
-                        {
-                            Form frmAgregar = new frmAgregar(result);
-                            OpenChildForm(frmAgregar);
-                        }
-                        else
-                        {
-                            MessageBox.Show($"El producto '{cell.ToArray()[1].Value}' ya existe", "Error", MessageBoxButtons.OK,
-                                            MessageBoxIcon.Information, MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
-                        }
-
-                        break;
-                    }
-                case ('E'):
-                    {
-                        var cell = searchProduct(result);
-                        if (cell != null)
-                        {
-                            Form frmEdit = new frmEdit(cell);
-                            OpenChildForm(frmEdit);
-                        }
-                        else
-                        {
-                            MessageBox.Show($"El producto no existe", "Error", MessageBoxButtons.OK,
-                                            MessageBoxIcon.Information, MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
-                        }
-                        break;
-                    }
                 default:
                     {
-                        var cell = searchProduct(result);
-                        if (cell != null)
+                        Product product = new Product();
+                        product = product.Find(result);
+                        if (product.Id != null)
                         {
-                            readProduct(result);
+                            if (this.MdiChildren.Length == 0)
+                            {
+                                Form frmRead = new frmProduct(result);
+                                OpenChildForm(frmRead);
+                            }
+                            else
+                            {
+                                ReadProduct(result, (TextBox)this.ActiveMdiChild.Controls.Find("txtbProductList", true).FirstOrDefault());
+                            }
                         }
                         else
                         {
-                            MessageBox.Show($"El producto no existe", "Error", MessageBoxButtons.OK,
-                                            MessageBoxIcon.Information, MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
+                            DialogResult msgResult = MessageBox.Show($"El codigo {result} no fue encontrado \n¿Desea agregar el producto al inventario?", "Producto no registrado", MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Question, MessageBoxDefaultButton.Button1);
+                            if (msgResult == DialogResult.Yes)
+                            {
+                                Form frmProduct = new frmProduct(result);
+                                OpenChildForm(frmProduct);
+                            }
                         }
                         break;
                     }
@@ -244,60 +223,40 @@ namespace ScannerReader.Views
                 videoSource.SignalToStop();
             }
         }
-
-        private void btn_buscar_Click(object sender, EventArgs e)
+        private void ReadProduct(string result, TextBox outputBarcode = null)
         {
-            modeCode = 'r';
-            onCamera();
-        }
+            if (outputBarcode == null) outputBarcode = textBoxBarcode;
 
-        private void readProduct(string result)
-        {
-            var product = searchProduct(result).ToArray();
+            Product product = new Product();
+            product = product.Find(result);
 
-            textBoxBarcode.Invoke(new MethodInvoker(delegate
+            outputBarcode.Invoke(new MethodInvoker(delegate
             {
-                if (product != null)
+                if (product.Id != null)
                 {
-                    string productName = product[1].Value.ToString();
-                    string productVariant = product[2].Value.ToString();
-                    string productStock = product[3].Value.ToString();
-                    string productBuyPrice = product[4].Value.ToString();
-                    string productSellPrice = product[5].Value.ToString();
 
-                    textBoxBarcode.Text = $"Producto: {productName}\r\nVariante: {productVariant}" +
-                    $"\r\nStock: {productStock} " + (int.Parse(productStock)==1 ? "Unidad":"Unidades") +
-                    $"\r\nPrecio de Compra: ${productBuyPrice} \r\nPrecio de Venta: ${productSellPrice}";
+                    if (this.ActiveMdiChild is FrmSell child)
+                    {
+                        int quantity = ((int.TryParse(this.ActiveMdiChild.Controls.Find("nudQuantity", true)[0].Text, out quantity)) && (quantity > 0)) ? quantity : (int)1;
+                        child.AddProduct(product, quantity);
+                    }
+                    else
+                    {
+                        Form frmRead = new frmProduct(result);
+                        OpenChildForm(frmRead);
+                    }
                 }
                 else
                 {
-                    MessageBox.Show("Producto no registrado", "Error", MessageBoxButtons.OK,
-                        MessageBoxIcon.Information, MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
+                    DialogResult msgResult = MessageBox.Show($"El codigo {result} no fue encontrado \n¿Desea agregar el producto al inventario?", "Producto no registrado", MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question, MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
+                    if (msgResult == DialogResult.Yes)
+                    {
+                        Form frmProduct = new frmProduct(result);
+                        OpenChildForm(frmProduct);
+                    }
                 }
             }));
-        }
-
-        private IEnumerable<Excel.IXLCell> searchProduct(string code)
-        {
-            IEnumerable<Excel.IXLCell> product = null;
-            var excelFile = new Excel.XLWorkbook(".\\BASEDEDATOS.xlsx");
-            var excelSheet = excelFile.Worksheets.Worksheet("Productos");
-            var cell = excelSheet.CellsUsed().FirstOrDefault(cellSelected => cellSelected.Value.ToString() == code);
-            if (cell != null)
-            {
-                string row = cell.ToString().Substring(1);
-                product = excelSheet.Cells($"A{row}:F{row}");
-            }
-            
-            excelFile.Save();
-
-            return product;
-        }
-
-        private void btnEdit_Click(object sender, EventArgs e)
-        {
-            modeCode = 'E';
-            onCamera();
         }
 
         private void OpenChildForm(Form childForm)
@@ -313,37 +272,25 @@ namespace ScannerReader.Views
                 // Configura la nueva ventana como hijo del MDIContainer
                 childForm.MdiParent = this;
                 childForm.Activate();
-                childForm.Show();
 
                 childForm.Dock = DockStyle.Fill;
 
+                childForm.Show();
                 childForm.BringToFront();
             }
         }
-        
+
 
         private void leerToolStripMenuItem_Click(object sender, EventArgs e)
         {
             modeCode = 'r';
-            onCamera();
-        }
-
-        private void editarToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            modeCode = 'E';
-            onCamera();
-        }
-
-        private void agregarToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            modeCode = 'A';
-            onCamera();
+            OnCamera();
         }
 
         private void tscbLector_SelectedIndexChanged(object sender, EventArgs e)
         {
             int index = ((ToolStripComboBox)sender).SelectedIndex;
-            cameraChange(index - 1);
+            CameraChange(index - 1);
         }
 
         private void txtbBarcodeReader_KeyPress(object sender, KeyPressEventArgs e)
@@ -352,10 +299,11 @@ namespace ScannerReader.Views
             {
                 if ((e.KeyChar == (char)Keys.Enter) && (txtbBarcodeReader.Text.Length > 0))
                 {
-                    execute(txtbBarcodeReader.Text);
+                    Execute(txtbBarcodeReader.Text);
                     txtbBarcodeReader.Text = null;
                 }
-            } else
+            }
+            else
             {
                 e.Handled = true;
             }
@@ -363,7 +311,7 @@ namespace ScannerReader.Views
 
         private void tsddbInventory_DropDownItemClicked(object sender, ToolStripItemClickedEventArgs e)
         {
-            foreach(ToolStripMenuItem item in tsddbInventory.DropDownItems)
+            foreach (ToolStripMenuItem item in tsddbInventory.DropDownItems)
             {
                 if (!item.Equals(e.ClickedItem)) item.Checked = false;
             }
@@ -371,7 +319,42 @@ namespace ScannerReader.Views
 
         private void tsmiVender_Click(object sender, EventArgs e)
         {
+            Form frmSell = new FrmSell(pictureBoxCamera, typScanInfo);
+            typScanInfo.Controls[2].Visible = false;
+            OpenChildForm(frmSell);
+        }
+        private void frmMain_MdiChildActivate(object sender, EventArgs e)
+        {
+            if (this.ActiveMdiChild != null)
+            {
+                switch (this.ActiveMdiChild.Name)
+                {
+                    default:
+                        tsmiRead.PerformClick();
+                        tsddbInventory.Enabled = false;
+                        break;
+                }
+            }
+            else tsddbInventory.Enabled = true;
+        }
 
+        private void frmMain_KeyDown(object sender, KeyEventArgs e)
+        {
+            if ((char)e.KeyValue == (char)Keys.F1) txtbBarcodeReader.Select();
+        }
+
+        private void txtbBarcodeReader_Enter(object sender, EventArgs e)
+        {
+            var obj = (TextBox)sender;
+            obj.BackColor = Color.Cyan;
+            obj.ForeColor = Color.Black;
+        }
+
+        private void txtbBarcodeReader_Leave(object sender, EventArgs e)
+        {
+            var obj = (TextBox)sender;
+            obj.BackColor = Color.White;
+            obj.ForeColor = Color.Black;
         }
     }
 }
